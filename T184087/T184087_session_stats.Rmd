@@ -1,0 +1,29 @@
+---
+title: "Basic Statistics on Android App Sessions"
+author: "Chelsy Xie"
+date: "1/3/2018"
+output: html_document
+---
+
+```{r setup, echo=FALSE, error=TRUE, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(
+  error = TRUE, echo = FALSE, message = FALSE, warning = FALSE
+)
+```
+
+```{r packages}
+library(tidyverse)
+```
+
+```{r sql_connect, eval=FALSE}
+message("Create an auto-closing SSH tunnel in the background...")
+# See https://gist.github.com/scy/6781836 for more info.
+system("ssh -f -o ExitOnForwardFailure=yes stat1006.eqiad.wmnet -L 3307:analytics-slave.eqiad.wmnet:3306 sleep 10")
+library(RMySQL)
+con <- dbConnect(MySQL(), host = "127.0.0.1", group = "client", dbname = "log", port = 3307)
+```
+
+## Pages viewed per session
+
+
+
