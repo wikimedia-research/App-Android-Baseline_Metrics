@@ -1,0 +1,126 @@
+---
+title: "Understand Android app usage by market"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, message = FALSE, warning = FALSE)
+library(here) # devtools::install_github("krlmlr/here")
+```
+```{r pkgs, include=FALSE}
+library(magrittr) # install.packages(c("magrittr", "import"))
+import::from(dplyr, group_by, summarize, keep_where = filter, arrange, ungroup, mutate, select, rename)
+library(ggplot2)
+```
+```{r funcs, include=FALSE}
+monthly_aggregate <- function(x, .date, .f = mean, ...) {
+  y <- split(x, lubridate::floor_date(.date, unit = "month"))
+  return(.f(purrr::map_dbl(y, .f, ...), ...))
+}
+smart_formatter <- function(x, .colname, .digits = 2) {
+  if (grepl("rate", .colname)) {
+    return(sprintf(glue::glue("%0.{.digits}f%%"), 100 * x))
+  } else {
+    return(polloi::compress(x, .digits))
+  }
+}
+summarize_metrics <- function(.grouped_data, .format = TRUE) {
+  if (.format) {
+    output <- .grouped_data %>%
+      summarize(
+        Minimum = smart_formatter(min(value, na.rm = TRUE), Metric[1], 2),
+        `Daily median` = smart_formatter(mean(value, na.rm = TRUE), Metric[1], 2),
+        `Monthly median` = smart_formatter(monthly_aggregate(value, Date, median, na.rm = TRUE), Metric[1], 2),
+        Maximum = smart_formatter(max(value, na.rm = TRUE), Metric[1], 2),
+        Latest = smart_formatter(value[which.max(Date)], Metric[1], 2)
+      ) %>%
+      ungroup %>%
+      mutate(Latest = dplyr::if_else(Latest == "NANA", "-", Latest))
+  } else {
+    output <- .grouped_data %>%
+      summarize(
+        Minimum = min(value, na.rm = TRUE),
+        `Daily median` = mean(value, na.rm = TRUE),
+        `Monthly median` = monthly_aggregate(value, Date, median, na.rm = TRUE),
+        Maximum = max(value, na.rm = TRUE),
+        Latest = value[which.max(Date)]
+      ) %>%
+      ungroup
+  }
+  return(output)
+}
+```
+
+This report was last generated on `r format(lubridate::today(), "%B %d, %Y")`.
+
+```{r data, cache=TRUE}
+installs_country <- readr::read_csv(here("T184089/data/concatenated/installs-country.csv"))
+installs_language <- readr::read_csv(here("T184089/data/concatenated/installs-country.csv"))
+installs_overview <- readr::read_csv(here("T184089/data/concatenated/installs-overview.csv"))
+retained_country <- readr::read_csv(here("T184089/data/concatenated/retained_installers-country.csv"))
+retained_play_country <- readr::read_csv(here("T184089/data/concatenated/retained_installers-play_country.csv"))
+retained_channel <- readr::read_csv(here("T184089/data/concatenated/retained_installers-channel.csv"))
+ratings_country <- readr::read_csv(here("T184089/data/concatenated/ratings-country.csv"))
+ratings_language <- readr::read_csv(here("T184089/data/concatenated/ratings-country.csv"))
+ratings_overview <- readr::read_csv(here("T184089/data/concatenated/ratings-overview.csv"))
+```
+
+## Installs
+
+```{r installs_summary}
+installs_overview %>%
+  tidyr::gather(metric, value, -c(Date, `Package Name`)) %>%
+  mutate(metric = dplyr::if_else(grepl("^Current", metric), paste(metric, "(Deprecated)"), metric)) %>%
+  group_by(Metric = metric) %>%
+  summarize_metrics %>%
+  select(-Minimum) %>%
+  knitr::kable(format = "markdown", align = c("l", "r", "r", "r", "r"))
+```
+
+## Retained Installs
+
+```{r retained_channels, fig.width=9, fig.height=9}
+retained_channel %>%
+  tidyr::gather(metric, value, -c(Date, `Package Name`, `Acquisition Channel`)) %>%
+  dplyr::group_by(`Acquisition Channel`, Metric = metric) %>%
+  summarize_metrics(.format = FALSE) %>%
+  select(-Latest) %>%
+  keep_where(
+    !Metric %in% c("Median Visitor to Installer conversion rate benchmark"),
+    !grepl("(UTM)", `Acquisition Channel`, fixed = TRUE)
+  ) %>%
+  ggplot(aes(x = `Acquisition Channel`)) +
+  geom_pointrange(aes(ymin = Minimum, ymax = Maximum, y = `Monthly median`)) +
+  scale_y_continuous(labels = function(x) {
+    if (all(x <= 1.0)) {
+      return(sprintf("%0.0f%%", 100 * x))
+    } else {
+      return(polloi::compress(x, 0))
+    }
+  }) +
+  coord_flip() +
+  facet_wrap(~ Metric, scales = "free_x", ncol = 3) +
+  ggtitle("Wikipedia Android app retention metrics by acquisition channel") +
+  wmf::theme_facet()
+```
+
+## Ratings
+
+```{r ratings_summary, fig.width=9, fig.height=4.5}
+ratings_summary <- ratings_overview %>%
+  tidyr::gather(`Type of rating`, Rating, -c(Date, `Package Name`)) %>%
+  mutate(`Type of rating` = sub(" Rating", "", `Type of rating`, fixed = TRUE))
+ggplot(ratings_summary, aes(x = Date, y = Rating, color = `Type of rating`)) +
+  geom_line(alpha = 0.75) +
+  scale_color_brewer(palette = "Set1") +
+  geom_smooth(
+    method = "gam", formula = y ~ s(x, k = 21), se = FALSE,
+    data = keep_where(ratings_summary, `Type of rating` == "Daily Average")
+  ) +
+  scale_x_date(date_breaks = "2 months", date_labels = "%b\n%Y") +
+  scale_y_continuous(limits = c(4.25, 5.0)) +
+  ggtitle("Wikipedia Android app ratings over time") +
+  wmf::theme_min()
+```
+
+## Sessions
