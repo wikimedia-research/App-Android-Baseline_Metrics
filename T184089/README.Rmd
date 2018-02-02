@@ -10,11 +10,45 @@ library(here) # devtools::install_github("krlmlr/here")
 ```{r pkgs, include=FALSE}
 library(magrittr) # install.packages(c("magrittr", "import"))
 import::from(dplyr, group_by, summarize, keep_where = filter, arrange, ungroup, mutate, select, rename)
+import::from(tidyr, gather, spread)
 library(ggplot2)
+library(countrycode) # install.packages("countrycode")
 ```
 ```{r funcs, include=FALSE}
-monthly_aggregate <- function(x, .date, .f = mean, ...) {
+geo_info <- function(data) {
+  # Assume country code is a ISO-2 character code and its column is named "Alpha2"
+  output <- data %>%
+    dplyr::mutate(
+      Country = countrycode(Alpha2, "iso2c", "country.name", warn = FALSE),
+      Continent = countrycode(Alpha2, "iso2c", "continent", warn = FALSE),
+      Region = countrycode(Alpha2, "iso2c", "region", warn = FALSE)
+    )
+  message("Augmented with country, continent, and region data")
+  return(output)
+}
+lang_info <- function(data) {
+  language_codes <- ISOcodes::ISO_639_2[, c("Alpha_2", "Name")]
+  language_codes %<>% keep_where(!is.na(Alpha_2)) %>% rename(Language = Name)
+  language_codes$Language %<>% stringi::stri_trans_general("Latin-ASCII")
+  output <- data %>%
+    mutate(Alpha2 = sub("([a-z]{2,3})(_.+)?", "\\1", Alpha2)) %>%
+    dplyr::left_join(language_codes, by = c("Alpha2" = "Alpha_2"))
+  message("Augmented with language data")
+  return(output)
+}
+language_aggregate <- function(data, .f, ...) {
+  output <- data %>%
+    dplyr::select(Date, `Package Name`, Alpha2, Language, dplyr::everything()) %>%
+    gather(metric, value, -c(Date, `Package Name`, Alpha2, Language)) %>%
+    dplyr::group_by(Date, `Package Name`, Alpha2, Language, metric) %>%
+    dplyr::summarize(value = .f(value, ...)) %>%
+    spread(metric, value)
+  message("Collapsed metrics across languages")
+  return(output)
+}
+monthly_aggregate <- function(x, .date, .f, ...) {
   y <- split(x, lubridate::floor_date(.date, unit = "month"))
+  message("Collapsed metrics by month")
   return(.f(purrr::map_dbl(y, .f, ...), ...))
 }
 smart_formatter <- function(x, .colname, .digits = 2) {
@@ -51,25 +85,39 @@ summarize_metrics <- function(.grouped_data, .format = TRUE) {
 }
 ```
 
-This report was last generated on `r format(lubridate::today(), "%B %d, %Y")`.
+This report for Phabricator ticket [T184089](https://phabricator.wikimedia.org/T184089) was last generated on `r format(lubridate::today(), "%B %d, %Y")`.
 
 ```{r data, cache=TRUE}
-installs_country <- readr::read_csv(here("T184089/data/concatenated/installs-country.csv"))
-installs_language <- readr::read_csv(here("T184089/data/concatenated/installs-country.csv"))
-installs_overview <- readr::read_csv(here("T184089/data/concatenated/installs-overview.csv"))
-retained_country <- readr::read_csv(here("T184089/data/concatenated/retained_installers-country.csv"))
-retained_play_country <- readr::read_csv(here("T184089/data/concatenated/retained_installers-play_country.csv"))
-retained_channel <- readr::read_csv(here("T184089/data/concatenated/retained_installers-channel.csv"))
-ratings_country <- readr::read_csv(here("T184089/data/concatenated/ratings-country.csv"))
-ratings_language <- readr::read_csv(here("T184089/data/concatenated/ratings-country.csv"))
-ratings_overview <- readr::read_csv(here("T184089/data/concatenated/ratings-overview.csv"))
+# installs_country <- here("T184089/data/concatenated/installs-country.csv") %>%
+#   readr::read_csv() %>% rename(Alpha2 = Country) %>% select(-dplyr::contains("events")) %>% geo_info
+# installs_language <- here("T184089/data/concatenated/installs-language.csv") %>%
+#   readr::read_csv(col_types = "Dcciiiiiiiiiiii") %>%
+#   select(-dplyr::contains("events")) %>% rename(Alpha2 = Language) %>%
+#   lang_info %>% language_aggregate(sum, na.rm = TRUE) %>%
+#   keep_where(!is.na(Language))
+# installs_overview <- here("T184089/data/concatenated/installs-overview.csv") %>%
+#   readr::read_csv() %>% select(-dplyr::contains("events"))
+retained_country <- here("T184089/data/concatenated/retained_installers-country.csv") %>%
+  readr::read_csv() %>% rename(Alpha2 = Country) %>%
+  geo_info
+retained_play_country <- here("T184089/data/concatenated/retained_installers-play_country.csv") %>%
+  readr::read_csv() %>% rename(Alpha2 = `Country  Play Store`) %>%
+  geo_info
+retained_channel <- here("T184089/data/concatenated/retained_installers-channel.csv") %>%
+  readr::read_csv()
+ratings_country <- here("T184089/data/concatenated/ratings-country.csv") %>%
+  readr::read_csv() %>% rename(Alpha2 = Country) %>%
+  geo_info
+ratings_language <- here("T184089/data/concatenated/ratings-language.csv") %>%
+  readr::read_csv() %>% rename(Alpha2 = Language) %>%
+  lang_info %>% language_aggregate(mean, na.rm = TRUE) %>%
+  keep_where(!is.na(Language))
+ratings_overview <- here("T184089/data/concatenated/ratings-overview.csv") %>%
+  readr::read_csv()
 ```
-
-## Installs
-
-```{r installs_summary}
+```{r installs_summary, eval=FALSE}
 installs_overview %>%
-  tidyr::gather(metric, value, -c(Date, `Package Name`)) %>%
+  gather(metric, value, -c(Date, `Package Name`)) %>%
   mutate(metric = dplyr::if_else(grepl("^Current", metric), paste(metric, "(Deprecated)"), metric)) %>%
   group_by(Metric = metric) %>%
   summarize_metrics %>%
@@ -79,36 +127,125 @@ installs_overview %>%
 
 ## Retained Installs
 
-```{r retained_channels, fig.width=9, fig.height=9}
-retained_channel %>%
-  tidyr::gather(metric, value, -c(Date, `Package Name`, `Acquisition Channel`)) %>%
+```{r retained_channels, fig.width=12, fig.height=9}
+retained_summary <- retained_channel %>%
+  keep_where(Date >= "2017-12-01") %>%
+  gather(metric, value, -c(Date, `Package Name`, `Acquisition Channel`)) %>%
   dplyr::group_by(`Acquisition Channel`, Metric = metric) %>%
   summarize_metrics(.format = FALSE) %>%
   select(-Latest) %>%
-  keep_where(
-    !Metric %in% c("Median Visitor to Installer conversion rate benchmark"),
-    !grepl("(UTM)", `Acquisition Channel`, fixed = TRUE)
-  ) %>%
-  ggplot(aes(x = `Acquisition Channel`)) +
-  geom_pointrange(aes(ymin = Minimum, ymax = Maximum, y = `Monthly median`)) +
-  scale_y_continuous(labels = function(x) {
-    if (all(x <= 1.0)) {
+  keep_where(!grepl("(UTM)", `Acquisition Channel`, fixed = TRUE))
+conversion_benchmark <- keep_where(
+  retained_summary,
+  Metric == "Median Visitor to Installer conversion rate benchmark",
+  !is.na(`Monthly median`)
+) %>% mutate(Metric = "Visitor to Installer conversion rate")
+retained_summary %<>% keep_where(!Metric %in% c("Median Visitor to Installer conversion rate benchmark"))
+retained_summary$Metric %<>% factor(levels = c(
+  "Installers retained for 1 day", "Installers retained for 7 days",
+  "Installers retained for 15 days", "Installers retained for 30 days",
+  "Installer to 1 day retention rate", "Installer to 7 days retention rate",
+  "Installer to 15 days retention rate", "Installer to 30 days retention rate",
+  "Store Listing Visitors", "Installers", "Visitor to Installer conversion rate"
+))
+conversion_benchmark$Metric %<>% factor(levels = levels(retained_summary$Metric))
+retained_summary %<>% arrange(Metric, `Acquisition Channel`)
+# log10p1 <- function(x) log10(x + 1)
+# retained_summary$Minimum[!grepl("rate", retained_summary$Metric)] %<>% log10p1
+# retained_summary$`Monthly median`[!grepl("rate", retained_summary$Metric)] %<>% log10p1
+# retained_summary$Maximum[!grepl("rate", retained_summary$Metric)] %<>% log10p1
+smart_labeller <- function(x, m, log_transformed = FALSE) {
+  percentage <- sprintf("%0.1f%%", 100 * x)
+  if (log_transformed) {
+    compressed <- polloi::compress(ceiling(10 ^ x), 1)
+  } else {
+    compressed <- polloi::compress(ceiling(x), 1)
+  }
+  compressed[grepl("rate", m)] <- percentage[grepl("rate", m)]
+  return(compressed)
+}
+ggplot(retained_summary, aes(x = `Acquisition Channel`)) +
+  geom_hline(aes(yintercept = `Daily median`), data = conversion_benchmark, linetype = "dashed") +
+  geom_pointrange(aes(ymin = Minimum, ymax = Maximum, y = `Daily median`)) +
+  geom_text(aes(y = `Daily median`, label = smart_labeller(`Daily median`, Metric)), vjust = "bottom", hjust = "left", nudge_x = 0.2) +
+  scale_y_continuous("Median across December 2017 and Janurary 2018", labels = function(x) {
+    if (all(x <= 1.0, na.rm = TRUE)) {
       return(sprintf("%0.0f%%", 100 * x))
     } else {
       return(polloi::compress(x, 0))
     }
   }) +
   coord_flip() +
-  facet_wrap(~ Metric, scales = "free_x", ncol = 3) +
-  ggtitle("Wikipedia Android app retention metrics by acquisition channel") +
+  facet_wrap(~ Metric, scales = "free_x", ncol = 4) +
+  labs(
+    title = "Wikipedia Android app retention metrics by acquisition channel",
+    subtitle = "Bars indicate minimum and maximum observed during the last 2 months",
+    caption = "Google provides a median visitor-to-installer conversion rate on Play Store for benchmarking, which is represented by the dashed line"
+  ) +
   wmf::theme_facet()
 ```
+
+* Very few people find the app via AdWords and fewer still actually install it and fewer still keep it installed for more than a day.
+* Users tend to find the app organically through the Play Store (and that's _basically_ it).
+* We are very close to the median visit-to-install conversion rate across the whole Play Store.
+* A little over a third of users who found the app via Google Search end up installing it.
+* Users who found the app via Play Store and AdWords campaigns and then installed it were more likely to keep the app installed for 30 days than users who found it via Google search and other third-party referrers.
+
+```{r retained_region, fig.width=12, fig.height=8}
+retained_region <- retained_country %>%
+  keep_where(!is.na(Region), Date >= "2017-12-01") %>%
+  select(c(
+    Date, Country, Continent, Region,
+    `Store Listing Visitors`, Installers,
+    `Installers retained for 1 day`,
+    `Installers retained for 7 days`,
+    `Installers retained for 30 days`
+  )) %>%
+  gather(metric, value, -c(Date, Country, Continent, Region)) %>%
+  group_by(Date, Region, Continent, metric) %>%
+  summarize(value = sum(value, na.rm = TRUE)) %>%
+  ungroup %>%
+  spread(metric, value, fill = 0) %>%
+  mutate(
+    `Visitor to Installer conversion rate` = Installers / `Store Listing Visitors`,
+    `Installer to 1 day retention rate` = `Installers retained for 1 day` / Installers,
+    `Installer to 7 days retention rate` = `Installers retained for 7 days` / Installers,
+    `Installer to 30 days retention rate` = `Installers retained for 30 days` / Installers
+  ) %>%
+  select(-dplyr::contains("retained")) %>%
+  gather(Metric, Value, -c(Date, Region, Continent)) %>%
+  group_by(Region, Continent, Metric) %>%
+  summarize(Value = median(Value, na.rm = TRUE)) %>%
+  ungroup %>%
+  mutate(Metric = factor(Metric, levels = c("Store Listing Visitors", "Installers", "Visitor to Installer conversion rate", "Installer to 1 day retention rate", "Installer to 7 days retention rate", "Installer to 30 days retention rate")))
+retained_region$Region %<>% factor(levels = unique(retained_region$Region[order(retained_region$Continent, retained_region$Region, decreasing = TRUE)]))
+ggplot(retained_region, aes(x = Region, y = Value, color = Continent)) +
+  geom_hline(yintercept = 0.5, linetype = "dashed") +
+  geom_pointrange(aes(ymin = 0, ymax = Value)) +
+  scale_y_continuous("Median across December 2017 and Janurary 2018", labels = function(x) {
+    if (all(x <= 1.0)) {
+      return(sprintf("%0.0f%%", 100 * x))
+    } else {
+      return(polloi::compress(x, 0))
+    }
+  }) +
+  facet_wrap(~ Metric, scales = "free_x", ncol = 3) +
+  coord_flip() +
+  ggtitle("Wikipedia Android app conversion and retention statistics by region") +
+  wmf::theme_facet()
+```
+
+* The app's Play Store page is not seen by many users in Africa, but the conversion rates for those regions are some of the highest rates compared to regions in other continents.
+* Way more people look at the app in the Play Store in Southern Asia than in any other region, but the conversion rate is close to the Play Store median.
+* Some of our lowest conversion rates are in Central America, South America, South-Eastern Asia, Western Asia, Southern Europe, and especially oceanic regions like Polynesia.
+* Even when users in those low-conversion regions do install the app, less than 30% of them keep the app installed more than 30 days.
+* 30-day retention rates are highest in North America, Europe in general, and Australia & New Zealand.
 
 ## Ratings
 
 ```{r ratings_summary, fig.width=9, fig.height=4.5}
 ratings_summary <- ratings_overview %>%
-  tidyr::gather(`Type of rating`, Rating, -c(Date, `Package Name`)) %>%
+  gather(`Type of rating`, Rating, -c(Date, `Package Name`)) %>%
   mutate(`Type of rating` = sub(" Rating", "", `Type of rating`, fixed = TRUE))
 ggplot(ratings_summary, aes(x = Date, y = Rating, color = `Type of rating`)) +
   geom_line(alpha = 0.75) +
@@ -123,4 +260,8 @@ ggplot(ratings_summary, aes(x = Date, y = Rating, color = `Type of rating`)) +
   wmf::theme_min()
 ```
 
+TODO: breakdown by country & language
+
 ## Sessions
+
+TODO
