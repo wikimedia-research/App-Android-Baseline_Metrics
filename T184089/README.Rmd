@@ -83,6 +83,12 @@ summarize_metrics <- function(.grouped_data, .format = TRUE) {
   }
   return(output)
 }
+percentile <- function(x) {
+  output <- vapply(x, function(y) {
+    return(sum(x <= y))
+  }, 0L) / length(x)
+  return(output)
+}
 ```
 
 This report for Phabricator ticket [T184089](https://phabricator.wikimedia.org/T184089) was last generated on `r format(lubridate::today(), "%B %d, %Y")`.
@@ -127,6 +133,8 @@ installs_overview %>%
 
 ## Retained Installs
 
+**Acquisition channels** in [acquisition reports](https://play.google.com/apps/publish/?account=6169333749249604352#AcquisitionPerformancePlace:p=org.wikipedia&apr=RETAINED_INSTALLERS) include Play Store (users find the app by browsing or searching on the Play Store app), Google Search, third-party referrers (users find the app via an untagged deep link to the Play Store), and AdWords (Google's advertising service).
+
 ```{r retained_channels, fig.width=12, fig.height=9}
 retained_summary <- retained_channel %>%
   keep_where(Date >= "2017-12-01") %>%
@@ -135,11 +143,22 @@ retained_summary <- retained_channel %>%
   summarize_metrics(.format = FALSE) %>%
   select(-Latest) %>%
   keep_where(!grepl("(UTM)", `Acquisition Channel`, fixed = TRUE))
-conversion_benchmark <- keep_where(
-  retained_summary,
-  Metric == "Median Visitor to Installer conversion rate benchmark",
-  !is.na(`Monthly median`)
-) %>% mutate(Metric = "Visitor to Installer conversion rate")
+benchmarks <- dplyr::data_frame(
+  Metric = c(
+    "Visitor to Installer conversion rate",
+    "Installer to 1 day retention rate",
+    "Installer to 7 days retention rate",
+    "Installer to 15 days retention rate",
+    "Installer to 30 days retention rate"
+  ),
+  Benchmark = c(
+    33.6,
+    75.1,
+    61.2,
+    53.9,
+    46.3
+  )
+); benchmarks$Benchmark <- benchmarks$Benchmark / 100
 retained_summary %<>% keep_where(!Metric %in% c("Median Visitor to Installer conversion rate benchmark"))
 retained_summary$Metric %<>% factor(levels = c(
   "Installers retained for 1 day", "Installers retained for 7 days",
@@ -148,7 +167,7 @@ retained_summary$Metric %<>% factor(levels = c(
   "Installer to 15 days retention rate", "Installer to 30 days retention rate",
   "Store Listing Visitors", "Installers", "Visitor to Installer conversion rate"
 ))
-conversion_benchmark$Metric %<>% factor(levels = levels(retained_summary$Metric))
+benchmarks$Metric %<>% factor(levels = levels(retained_summary$Metric))
 retained_summary %<>% arrange(Metric, `Acquisition Channel`)
 # log10p1 <- function(x) log10(x + 1)
 # retained_summary$Minimum[!grepl("rate", retained_summary$Metric)] %<>% log10p1
@@ -165,7 +184,7 @@ smart_labeller <- function(x, m, log_transformed = FALSE) {
   return(compressed)
 }
 ggplot(retained_summary, aes(x = `Acquisition Channel`)) +
-  geom_hline(aes(yintercept = `Daily median`), data = conversion_benchmark, linetype = "dashed") +
+  geom_hline(aes(yintercept = Benchmark), data = benchmarks, linetype = "dashed") +
   geom_pointrange(aes(ymin = Minimum, ymax = Maximum, y = `Daily median`)) +
   geom_text(aes(y = `Daily median`, label = smart_labeller(`Daily median`, Metric)), vjust = "bottom", hjust = "left", nudge_x = 0.2) +
   scale_y_continuous("Median across December 2017 and Janurary 2018", labels = function(x) {
@@ -180,16 +199,16 @@ ggplot(retained_summary, aes(x = `Acquisition Channel`)) +
   labs(
     title = "Wikipedia Android app retention metrics by acquisition channel",
     subtitle = "Bars indicate minimum and maximum observed during the last 2 months",
-    caption = "Google provides a median visitor-to-installer conversion rate on Play Store for benchmarking, which is represented by the dashed line"
+    caption = "Google calculated median rates on Play Store from December 2017, which are represented by the dashed lines. Those benchmarks are based on the performance of popular free apps in the Books & Reference category."
   ) +
   wmf::theme_facet()
 ```
 
 * Very few people find the app via AdWords and fewer still actually install it and fewer still keep it installed for more than a day.
 * Users tend to find the app organically through the Play Store (and that's _basically_ it).
-* We are very close to the median visit-to-install conversion rate across the whole Play Store.
 * A little over a third of users who found the app via Google Search end up installing it.
 * Users who found the app via Play Store and AdWords campaigns and then installed it were more likely to keep the app installed for 30 days than users who found it via Google search and other third-party referrers.
+* Compared to the median conversion and retention rates, the Wikipedia app is way better at 1/7/15/30-day install retention than other popular free apps in the *Books & Reference* category.
 
 ```{r retained_region, fig.width=12, fig.height=8}
 retained_region <- retained_country %>%
@@ -243,6 +262,8 @@ ggplot(retained_region, aes(x = Region, y = Value, color = Continent)) +
 
 ## Ratings
 
+[App ratings over time](https://play.google.com/apps/publish/?account=6169333749249604352#RatingsPlace:p=org.wikipedia) are calculated from users' 1-5 star ratings.
+
 ```{r ratings_summary, fig.width=9, fig.height=4.5}
 ratings_summary <- ratings_overview %>%
   gather(`Type of rating`, Rating, -c(Date, `Package Name`)) %>%
@@ -260,7 +281,73 @@ ggplot(ratings_summary, aes(x = Date, y = Rating, color = `Type of rating`)) +
   wmf::theme_min()
 ```
 
-TODO: breakdown by country & language
+```{r ratings_languages, fig.width=9, fig.height=4.5}
+ratings_languages <- ratings_language %>%
+  keep_where(!is.na(Language), Date > "2017-12-01") %>%
+  group_by(Language) %>%
+  summarize(`Total Average Rating` = median(`Total Average Rating`, na.rm = TRUE)) %>%
+  arrange(desc(`Total Average Rating`)) %>%
+  mutate(Percentile = percentile(`Total Average Rating`)) %>%
+  keep_where(Percentile <= 0.1 | (Percentile > 0.45 & Percentile <= 0.55) | Percentile >= 0.9) %>%
+  mutate(
+    Group = factor(dplyr::case_when(
+      Percentile <= 0.1 ~ "Bottom 10%",
+      Percentile >= 0.9 ~ "Top 10%",
+      TRUE ~ "Middle 10%"
+    ), levels = rev(c("Bottom 10%", "Middle 10%", "Top 10%")))
+  )
+ratings_languages$Language %<>% factor(levels = unique(ratings_languages$Language[order(ratings_languages$Group, ratings_languages$Language, decreasing = TRUE)]))
+ggplot(ratings_languages, aes(y = `Total Average Rating`, x = Language, color = Group)) +
+  geom_pointrange(aes(ymin = 0, ymax = `Total Average Rating`)) +
+  coord_flip() +
+  labs(
+    color = "Percentile", y = "Average rating on Play Store across December 2017 and Janurary 2018",
+    title = "Average rating of Wikipedia Android app on Play Store by language"
+  ) +
+  wmf::theme_min()
+```
+
+* The languages whose users rated the app the lowest (e.g. Norwegian and Japanese) are still close to 4 stars on average.
+
+**Note to self**: would be useful at some point to also compare by families of languages, to see if we're doing well/poorly in specific families (e.g. Caucasian vs Asian vs Indo-European).
+
+```{r ratings_region, fig.width=9, fig.height=4.5}
+ratings_region <- ratings_country %>%
+  keep_where(!is.na(Region), !is.na(Continent), Date > "2017-12-01") %>%
+  group_by(Continent, Region) %>%
+  summarize(`Total Average Rating` = median(`Total Average Rating`, na.rm = TRUE)) %>%
+  arrange(desc(`Total Average Rating`))
+ratings_continent <- ratings_country %>%
+  keep_where(!is.na(Region), !is.na(Continent), Date > "2017-12-01") %>%
+  group_by(Continent) %>%
+  summarize(`Total Average Rating` = median(`Total Average Rating`, na.rm = TRUE)) %>%
+  arrange(`Total Average Rating`) %>%
+  mutate(Order = 1:n()) %>%
+  select(-`Total Average Rating`)
+ratings_region %<>% dplyr::left_join(ratings_continent, by = "Continent")
+ratings_region$Region %<>% factor(levels = unique(ratings_region$Region[order(ratings_region$Order, ratings_region$`Total Average Rating`, decreasing = TRUE)]))
+ratings_region$Continent %<>% factor(levels = ratings_continent$Continent)
+ggplot(ratings_region, aes(x = Region, color = Continent, y = `Total Average Rating`)) +
+  geom_pointrange(aes(ymin = 0, ymax = `Total Average Rating`)) +
+  coord_flip() +
+  labs(
+    color = "Continent, arranged by average across regions",
+    y = "Average rating on Play Store across December 2017 and Janurary 2018",
+    title = "Average rating of Wikipedia Android app on Play Store by region & continent"
+  ) +
+  wmf::theme_min()
+```
+
+* The average rating is lowest in Africa across all regions.
+* Regions where the app is rated the lowest include:
+    * Micronesia (e.g. Palau, Northern Mariana Islands, Federated States of Micronesia)
+    * Western Europe (e.g. Belgium, France, Germany)
+    * Eastern Asia (e.g. Japan, South Korea)
+* Regions where the app is rated the highest include:
+    * Polynesia (Samoa, American Samoa, French Polynesia)
+    * Eastern Europe (e.g. Belarus, Poland, Russia)
+    * Central Asia (e.g. Kazakhstan, Tajikistan, Uzbekistan)
+    * Southern Asia (e.g. India, Afghanistan, Pakistan)
 
 ## Sessions
 
