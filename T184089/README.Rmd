@@ -475,7 +475,10 @@ avg_continental <- dau_country %>%
   group_by(Continent, date) %>%
   summarize(dau = sum(dau), mau = sum(mau)) %>%
   mutate(stickiness = dau / mau) %>%
-  summarize(`Avg daily stickiness` = sprintf("%.1f%%", 100 * mean(stickiness)))
+  summarize(
+    `Avg daily users` = polloi::compress(mean(dau), 2),
+    `Avg daily stickiness` = sprintf("%.1f%%", 100 * mean(stickiness))
+  )
 mau_country %>%
   keep_where(!is.na(Continent), year == 2018, month == 1) %>%
   group_by(Continent) %>%
@@ -487,7 +490,7 @@ mau_country %>%
   arrange(Continent) %>%
   select(-mau) %>%
   dplyr::left_join(avg_continental, by = "Continent") %>%
-  knitr::kable(format = "markdown", align = c("l", "r", "r", "r"))
+  knitr::kable(format = "markdown", align = c("l", "r", "r", "r", "r", "r"))
 ```
 ```{r regional_shares}
 avg_regional <- dau_country %>%
@@ -495,7 +498,10 @@ avg_regional <- dau_country %>%
   group_by(Continent, Region, date) %>%
   summarize(dau = sum(dau), mau = sum(mau)) %>%
   mutate(stickiness = dau / mau) %>%
-  summarize(`Avg daily stickiness` = sprintf("%.1f%%", 100 * mean(stickiness)))
+  summarize(
+    `Avg daily users` = polloi::compress(mean(dau), 2),
+    `Avg daily stickiness` = sprintf("%.1f%%", 100 * mean(stickiness))
+  )
 mau_country %>%
   keep_where(!is.na(Region), year == 2018, month == 1) %>%
   group_by(Continent, Region) %>%
@@ -504,10 +510,12 @@ mau_country %>%
     `Users in Jan '18` = polloi::compress(mau, 2),
     `Share within continent` = sprintf("%.1f%%", 100 * mau / sum(mau))
   ) %>%
+  ungroup %>%
+  mutate(`Overall share` = sprintf("%.1f%%", 100 * mau / sum(mau))) %>%
   arrange(Continent, Region) %>%
   select(-mau) %>%
   dplyr::left_join(avg_regional, by = c("Continent", "Region")) %>%
-  knitr::kable(format = "markdown", align = c("l", "l", "r", "r", "r"))
+  knitr::kable(format = "markdown", align = c("l", "l", "r", "r", "r", "r", "r"))
 ```
 
 ## Sessions

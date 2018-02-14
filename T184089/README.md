@@ -91,40 +91,41 @@ families (e.g. Caucasian vs Asian vs Indo-European).
     specifically) and Southern/South-Eastern Asia
   - Other than Australia & New Zealand (where the app has high
     stickiness relative to other regions), the app is doing poorly in
-    Oceanic regions (which had less than 1.5K users each)
+    Oceanic regions (which had less than 1.5K users
+each)
 
-| Continent | Users in Jan ’18 | Share | Avg daily stickiness |
-| :-------- | ---------------: | ----: | -------------------: |
-| Africa    |          290.77K |  4.8% |                12.8% |
-| Americas  |            1.42M | 23.4% |                22.3% |
-| Asia      |            1.33M | 22.1% |                15.4% |
-| Europe    |            2.91M | 48.1% |                20.6% |
-| Oceania   |           96.59K |  1.6% |                22.9% |
+| Continent | Users in Jan ’18 | Share | Avg daily users | Avg daily stickiness |
+| :-------- | ---------------: | ----: | --------------: | -------------------: |
+| Africa    |          290.77K |  4.8% |          37.22K |                12.8% |
+| Americas  |            1.42M | 23.4% |         316.49K |                22.3% |
+| Asia      |            1.33M | 22.1% |         204.89K |                15.4% |
+| Europe    |            2.91M | 48.1% |         599.84K |                20.6% |
+| Oceania   |           96.59K |  1.6% |          22.07K |                22.9% |
 
-| Continent | Region                    | Users in Jan ’18 | Share within continent | Avg daily stickiness |
-| :-------- | :------------------------ | ---------------: | ---------------------: | -------------------: |
-| Africa    | Eastern Africa            |           22.73K |                   7.8% |                12.2% |
-| Africa    | Middle Africa             |           123.3K |                  42.4% |                12.9% |
-| Africa    | Northern Africa           |           80.52K |                  27.7% |                13.3% |
-| Africa    | Southern Africa           |           21.49K |                   7.4% |                16.6% |
-| Africa    | Western Africa            |           42.73K |                  14.7% |                10.1% |
-| Americas  | Caribbean                 |           55.72K |                   3.9% |                 9.7% |
-| Americas  | Central America           |           85.43K |                   6.0% |                15.9% |
-| Americas  | Northern America          |            1.09M |                  76.9% |                24.4% |
-| Americas  | South America             |          186.03K |                  13.1% |                17.1% |
-| Asia      | Central Asia              |           24.97K |                   1.9% |                16.7% |
-| Asia      | Eastern Asia              |          296.12K |                  22.2% |                19.4% |
-| Asia      | South-Eastern Asia        |          202.09K |                  15.2% |                14.3% |
-| Asia      | Southern Asia             |          662.01K |                  49.6% |                13.4% |
-| Asia      | Western Asia              |          148.68K |                  11.1% |                17.2% |
-| Europe    | Eastern Europe            |          470.99K |                  16.2% |                18.0% |
-| Europe    | Northern Europe           |          505.21K |                  17.4% |                23.3% |
-| Europe    | Southern Europe           |           502.5K |                  17.3% |                20.9% |
-| Europe    | Western Europe            |            1.43M |                  49.2% |                20.4% |
-| Oceania   | Australia and New Zealand |           94.32K |                  97.7% |                23.1% |
-| Oceania   | Melanesia                 |            1.49K |                   1.5% |                11.8% |
-| Oceania   | Micronesia                |              441 |                   0.5% |                16.0% |
-| Oceania   | Polynesia                 |              339 |                   0.4% |                16.3% |
+| Continent | Region                    | Users in Jan ’18 | Share within continent | Overall share | Avg daily users | Avg daily stickiness |
+| :-------- | :------------------------ | ---------------: | ---------------------: | ------------: | --------------: | -------------------: |
+| Africa    | Eastern Africa            |           22.73K |                   7.8% |          0.4% |           2.77K |                12.2% |
+| Africa    | Middle Africa             |           123.3K |                  42.4% |          2.0% |          15.91K |                12.9% |
+| Africa    | Northern Africa           |           80.52K |                  27.7% |          1.3% |          10.67K |                13.3% |
+| Africa    | Southern Africa           |           21.49K |                   7.4% |          0.4% |           3.57K |                16.6% |
+| Africa    | Western Africa            |           42.73K |                  14.7% |          0.7% |            4.3K |                10.1% |
+| Americas  | Caribbean                 |           55.72K |                   3.9% |          0.9% |            5.4K |                 9.7% |
+| Americas  | Central America           |           85.43K |                   6.0% |          1.4% |          13.57K |                15.9% |
+| Americas  | Northern America          |            1.09M |                  76.9% |         18.0% |         265.79K |                24.4% |
+| Americas  | South America             |          186.03K |                  13.1% |          3.1% |          31.74K |                17.1% |
+| Asia      | Central Asia              |           24.97K |                   1.9% |          0.4% |           4.16K |                16.7% |
+| Asia      | Eastern Asia              |          296.12K |                  22.2% |          4.9% |          57.45K |                19.4% |
+| Asia      | South-Eastern Asia        |          202.09K |                  15.2% |          3.3% |          28.84K |                14.3% |
+| Asia      | Southern Asia             |          662.01K |                  49.6% |         10.9% |          88.84K |                13.4% |
+| Asia      | Western Asia              |          148.68K |                  11.1% |          2.5% |          25.59K |                17.2% |
+| Europe    | Eastern Europe            |          470.99K |                  16.2% |          7.8% |          84.85K |                18.0% |
+| Europe    | Northern Europe           |          505.21K |                  17.4% |          8.4% |         117.64K |                23.3% |
+| Europe    | Southern Europe           |           502.5K |                  17.3% |          8.3% |         105.22K |                20.9% |
+| Europe    | Western Europe            |            1.43M |                  49.2% |         23.7% |         292.12K |                20.4% |
+| Oceania   | Australia and New Zealand |           94.32K |                  97.7% |          1.6% |          21.78K |                23.1% |
+| Oceania   | Melanesia                 |            1.49K |                   1.5% |          0.0% |          173.74 |                11.8% |
+| Oceania   | Micronesia                |              441 |                   0.5% |          0.0% |              67 |                16.0% |
+| Oceania   | Polynesia                 |              339 |                   0.4% |          0.0% |           53.32 |                16.3% |
 
 ## Sessions
 
