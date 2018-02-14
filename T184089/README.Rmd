@@ -12,6 +12,7 @@ library(magrittr) # install.packages(c("magrittr", "import"))
 import::from(dplyr, group_by, summarize, keep_where = filter, arrange, ungroup, mutate, select, rename)
 import::from(tidyr, gather, spread)
 library(ggplot2)
+library(ggrepel)
 library(countrycode) # install.packages("countrycode")
 ```
 ```{r funcs, include=FALSE}
@@ -120,6 +121,22 @@ ratings_language <- here("T184089/data/concatenated/ratings-language.csv") %>%
   keep_where(!is.na(Language))
 ratings_overview <- here("T184089/data/concatenated/ratings-overview.csv") %>%
   readr::read_csv()
+overall_au <- here("T184089/data/active_users/overall_active_users.csv") %>%
+  readr::read_csv() %>%
+  mutate(stickiness = dau / mau)
+mau_country <- here("T184089/data/active_users/mau_country.csv") %>%
+  readr::read_csv() %>%
+  rename(mau = unique_count, Alpha2 = country_code) %>%
+  geo_info
+dau_country <- here("T184089/data/active_users/dau_country.csv") %>%
+  readr::read_csv() %>%
+  rename(dau = unique_count) %>%
+  select(-country_code) %>%
+  dplyr::left_join(mau_country, by = c("year", "month", "country", "platform")) %>%
+  mutate(
+    date = as.Date(paste(year, month, day, sep = "-")),
+    stickiness = dau / mau
+  )
 ```
 ```{r installs_summary, eval=FALSE}
 installs_overview %>%
@@ -349,6 +366,159 @@ ggplot(ratings_region, aes(x = Region, color = Continent, y = `Total Average Rat
     * Central Asia (e.g. Kazakhstan, Tajikistan, Uzbekistan)
     * Southern Asia (e.g. India, Afghanistan, Pakistan)
 
+## App Stickiness
+
+```{r stickiness_overall, eval=FALSE}
+ggplot(overall_au, aes(x = date, y = stickiness, color = platform)) +
+  geom_line() +
+  scale_x_date(date_labels = "%b\n%Y", date_breaks = "1 month", date_minor_breaks = "1 month") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(
+    x = "Date", y = "Stickiness (DAU/MAU)", color = "Platform",
+    title = "Wikipedia app \"stickiness %\" over time",
+    subtitle = "DAU = daily active users, MAU = monthly active users",
+    caption = "App stickiness of 25% means that day represents 1/4 of users that month.\nNote on iOS October jump: Apple named the app an Editor's Choice on Oct 27, 2017."
+  ) +
+  wmf::theme_min()
+```
+```{r stickiness_region, fig.width=16, fig.height=8}
+stickiness_region <- dau_country %>%
+  keep_where(!is.na(Region), date < "2018-02-01", platform == "Android") %>%
+  group_by(Date = date, Continent, Region) %>%
+  summarize(dau = sum(dau), mau = sum(mau)) %>%
+  mutate(stickiness = dau / mau) %>%
+  ungroup
+region_labels <- stickiness_region %>%
+  group_by(Continent, Region) %>%
+  dplyr::top_n(1, -stickiness) %>%
+  ungroup %>%
+  arrange(Continent, desc(stickiness)) %>%
+  group_by(Continent) %>%
+  mutate(RegionN = as.character(as.numeric(factor(Region, levels = Region)))) %>%
+  ungroup
+stickiness_region <- region_labels %>%
+  select(Region, RegionN) %>%
+  dplyr::left_join(stickiness_region, ., by = "Region")
+stickiness_continent <- dau_country %>%
+  keep_where(!is.na(Region), date < "2018-02-01", platform == "Android") %>%
+  mutate(Region = Continent, Continent = "Overall") %>%
+  group_by(Date = date, Continent, Region) %>%
+  summarize(dau = sum(dau), mau = sum(mau)) %>%
+  mutate(stickiness = dau / mau) %>%
+  ungroup
+continent_labels <- stickiness_continent %>%
+  group_by(Continent, Region) %>%
+  dplyr::top_n(1, -stickiness) %>%
+  ungroup %>%
+  arrange(Continent, desc(stickiness)) %>%
+  mutate(RegionN = as.character(as.numeric(factor(Region, levels = Region))))
+stickiness_continent <- continent_labels %>%
+  select(Region, RegionN) %>%
+  dplyr::left_join(stickiness_continent, ., by = "Region")
+ggplot() +
+  # Background showing all regions:
+  geom_line(
+    data = select(stickiness_region, -Continent),
+    aes(x = Date, y = stickiness, group = Region),
+    alpha = 0.2, size = 0.4
+  ) +
+  # Overall stickiness for comparison:
+  geom_line(
+    data = keep_where(overall_au, platform == "Android", date >= "2017-12-01"),
+    aes(x = date, y = stickiness),
+    linetype = "dashed"
+  ) +
+  # Per-region, per-continent stickiness:
+  geom_line(
+    data = rbind(stickiness_region, stickiness_continent[, names(stickiness_region)]),
+    aes(x = Date, y = stickiness, group = Region, color = RegionN),
+    size = 0.6
+  ) +
+  # Label the regions:
+  geom_point(
+    data = rbind(region_labels, continent_labels[, names(region_labels)]),
+    aes(x = Date, y = stickiness, color = RegionN),
+    size = 3
+  ) +
+  geom_label_repel(
+    data = rbind(region_labels, continent_labels[, names(region_labels)]),
+    aes(x = Date, y = stickiness, label = Region, fill = RegionN),
+    fontface = "bold", color = "white", segment.color = "black", seed = 0
+  ) +
+  # Extra stuff that makes the whole thing prettier:
+  scale_color_brewer(palette = "Set1") +
+  scale_fill_brewer(palette = "Set1") +
+  guides(color = FALSE, fill = FALSE) +
+  scale_y_continuous("Stickiness (DAU/MAU)", labels = scales::percent_format()) +
+  scale_x_date(
+    date_breaks = "14 days", date_minor_breaks = "7 days",
+    date_labels = "%d %b\n%Y"
+  ) +
+  facet_wrap(~ Continent) +
+  wmf::theme_facet(14) +
+  labs(
+    title = "Wikipedia Android app \"stickiness %\" by region & continent",
+    subtitle = "DAU = daily active users, MAU = monthly active users, dashed line represents overall stickiness for comparison",
+    caption = "App stickiness of 25% means that day represents 1/4 of users that month. Countries are grouped into regions as defined by World Bank Development Indicators."
+  )
+```
+
+- **Note**: refer to tables below for % of active users each continent and region was responsible for in January 2018
+- Overall stickiness is driven almost entirely by its stickiness in Europe (which was responsible for nearly half of all active users)
+- Highest stickiness is in Northern America and Europe in general
+- Lowest stickiness is in Africa (Western Africa countries specifically) and Southern/South-Eastern Asia
+- Other than Australia & New Zealand (where the app has high stickiness relative to other regions), the app is doing poorly in Oceanic countries (which had less than 1.5K users)
+
+```{r continental_shares}
+avg_continental <- dau_country %>%
+  keep_where(!is.na(Continent), year == 2018, month == 1) %>%
+  group_by(Continent, date) %>%
+  summarize(dau = sum(dau), mau = sum(mau)) %>%
+  mutate(stickiness = dau / mau) %>%
+  summarize(`Avg daily stickiness` = sprintf("%.1f%%", 100 * mean(stickiness)))
+mau_country %>%
+  keep_where(!is.na(Continent), year == 2018, month == 1) %>%
+  group_by(Continent) %>%
+  summarize(mau = sum(mau)) %>%
+  mutate(
+    `Users in Jan '18` = polloi::compress(mau, 2),
+    Share = sprintf("%.1f%%", 100 * mau / sum(mau))
+  ) %>%
+  arrange(Continent) %>%
+  select(-mau) %>%
+  dplyr::left_join(avg_continental, by = "Continent") %>%
+  knitr::kable(format = "markdown", align = c("l", "r", "r", "r"))
+```
+```{r regional_shares}
+avg_regional <- dau_country %>%
+  keep_where(!is.na(Region), year == 2018, month == 1) %>%
+  group_by(Continent, Region, date) %>%
+  summarize(dau = sum(dau), mau = sum(mau)) %>%
+  mutate(stickiness = dau / mau) %>%
+  summarize(`Avg daily stickiness` = sprintf("%.1f%%", 100 * mean(stickiness)))
+mau_country %>%
+  keep_where(!is.na(Region), year == 2018, month == 1) %>%
+  group_by(Continent, Region) %>%
+  summarize(mau = sum(mau)) %>%
+  mutate(
+    `Users in Jan '18` = polloi::compress(mau, 2),
+    `Share within continent` = sprintf("%.1f%%", 100 * mau / sum(mau))
+  ) %>%
+  arrange(Continent, Region) %>%
+  select(-mau) %>%
+  dplyr::left_join(avg_regional, by = c("Continent", "Region")) %>%
+  knitr::kable(format = "markdown", align = c("l", "l", "r", "r", "r"))
+```
+
 ## Sessions
 
-TODO
+Blockers:
+
+- [ ] resolve sampling bug ([T186682](https://phabricator.wikimedia.org/T186682))
+- [ ] resolve timestamp bug ([T186768](https://phabricator.wikimedia.org/T186768))
+
+TODO:
+
+- [ ] load [MobileWikiAppSessions](https://meta.wikimedia.org/wiki/Schema:MobileWikiAppSessions) events into Hadoop/Hive
+- [ ] join with `wmf.webrequest` on `appInstallId` (found under the `wmfuuid` key in [X-Analytics](https://wikitech.wikimedia.org/wiki/X-Analytics))
+- [ ] calculate summary metrics of session lengths by country
