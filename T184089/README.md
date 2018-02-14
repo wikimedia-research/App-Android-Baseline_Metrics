@@ -83,14 +83,15 @@ families (e.g. Caucasian vs Asian vs Indo-European).
 
   - **Note**: refer to tables below for % of active users each continent
     and region was responsible for in January 2018
-  - Overall stickiness is driven almost entirely by its stickiness in
-    Europe (which was responsible for nearly half of all active users)
+  - Overall stickiness is driven almost entirely by the app’s stickiness
+    in Europe (which was responsible for nearly half of all active
+    users)
   - Highest stickiness is in Northern America and Europe in general
   - Lowest stickiness is in Africa (Western Africa countries
     specifically) and Southern/South-Eastern Asia
   - Other than Australia & New Zealand (where the app has high
     stickiness relative to other regions), the app is doing poorly in
-    Oceanic countries (which had less than 1.5K users)
+    Oceanic regions (which had less than 1.5K users each)
 
 | Continent | Users in Jan ’18 | Share | Avg daily stickiness |
 | :-------- | ---------------: | ----: | -------------------: |
